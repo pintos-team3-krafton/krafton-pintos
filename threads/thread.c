@@ -27,6 +27,9 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
+/* timer_sleep() 호출될 경우 기존 running 되는 프로세스/스레드 -> sleep_list   */
+static struct list sleep_list;
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -107,6 +110,7 @@ thread_init (void) {
 	/* Init the globla thread context */
 	lock_init (&tid_lock);
 	list_init (&ready_list);
+	list_init (&sleep_list);
 	list_init (&destruction_req);
 
 	/* Set up a thread structure for the running thread. */
@@ -151,6 +155,52 @@ thread_tick (void) {
 	/* Enforce preemption. */
 	if (++thread_ticks >= TIME_SLICE)
 		intr_yield_on_return ();
+}
+
+void thread_wakeup(int64_t current_ticks)
+{
+	enum intr_level old_level = intr_disable(); // 인터럽트 비활성화
+
+	struct list_elem *curr_elem = list_begin(&sleep_list); // sleep_list의 첫번째 요소(빈 경우 NULL)
+	while (curr_elem != list_end(&sleep_list))
+	{
+		struct thread *curr_thread = list_entry(curr_elem, struct thread, elem); // 현재 검사중인 elem의 스레드
+
+		if (current_ticks >= curr_thread->wakeup_ticks) // 깰 시간이 됐으면
+		{
+			curr_elem = list_remove(curr_elem); // sleep_list에서 제거 & curr_elem에는 다음 elem이 담김
+			thread_unblock(curr_thread);		// ready_list로 이동
+		}
+		else
+			break;
+	}
+	intr_set_level(old_level); // 인터럽트 상태를 원래 상태로 변경
+}
+
+void
+thread_sleep (int64_t ticks) {
+	struct thread *curr = thread_current();	 // 현재 스레드;
+	enum intr_level old_level;
+
+	ASSERT(curr != idle_thread); // 현재 스레드가 idle이 아닐 때만
+
+	old_level = intr_disable(); // 인터럽트 비활성
+	curr->wakeup_ticks = ticks;	 // 일어날 시각 저장
+
+	// sleep_list에 있는 원소들과 wakeup_ticks를 비교하면서 삽입될 위치 찾아서 삽입하기
+	list_insert_ordered(&sleep_list, &curr->elem, compare_thread_ticks, NULL);
+	thread_block(); // 현재 스레드 재우기
+
+	intr_set_level(old_level); // 인터럽트 상태를 원래 상태로 변경
+}
+
+/* a와 b 스레드의 wakeup_ticks를 비교해서 작으면 true를 반환하는 함수 */
+bool
+compare_thread_ticks(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+	struct thread *st_a = list_entry(a, struct thread, elem);
+	struct thread *st_b = list_entry(b, struct thread, elem);
+	return st_a->wakeup_ticks < st_b->wakeup_ticks;
 }
 
 /* Prints thread statistics. */

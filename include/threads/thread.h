@@ -91,6 +91,7 @@ struct thread {
 	enum thread_status status;          /* Thread state. */
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
+	int64_t wakeup_ticks;	   			/* tick till wake up */
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
@@ -119,6 +120,11 @@ void thread_start (void);
 
 void thread_tick (void);
 void thread_print_stats (void);
+
+// 스레드 잠 재울 시간 / 잠 깨울 시간
+void thread_sleep (int64_t ticks);
+void thread_wakeup (int64_t global_ticks);
+bool compare_thread_ticks(const struct list_elem *a, const struct list_elem *b, void *aux);
 
 typedef void thread_func (void *aux);
 tid_t thread_create (const char *name, int priority, thread_func *, void *);
