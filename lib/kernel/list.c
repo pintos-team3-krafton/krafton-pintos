@@ -1,59 +1,56 @@
 #include "list.h"
 #include "../debug.h"
 
-/* Our doubly linked lists have two header elements: the "head"
-   just before the first element and the "tail" just after the
-   last element.  The `prev' link of the front header is null, as
-   is the `next' link of the back header.  Their other two links
-   point toward each other via the interior elements of the list.
+/* 우리의 양방향 연결 리스트는 두 개의 헤더 요소를 가지고 있습니다: 
+"head"는 첫 번째 요소 앞에, "tail"는 마지막 요소 바로 뒤에 위치합니다. 
+앞 헤더의 prev' 링크는 null이며, 뒷 헤더의 next' 링크도 마찬가지입니다.
+이들의 다른 두 링크는 리스트의 내부 요소를 통해 서로를 가리킵니다.
 
-   An empty list looks like this:
+빈 리스트는 이렇게 생겼습니다:
 
-   +------+     +------+
-   <---| head |<--->| tail |--->
-   +------+     +------+
++------+ +------+
+<---| head |<--->| tail |--->
++------+ +------+
 
-   A list with two elements in it looks like this:
+두 개의 요소가 있는 리스트는 이렇게 생겼습니다:
 
-   +------+     +-------+     +-------+     +------+
-   <---| head |<--->|   1   |<--->|   2   |<--->| tail |<--->
-   +------+     +-------+     +-------+     +------+
++------+ +-------+ +-------+ +------+
+<---| head |<--->| 1 |<--->| 2 |<--->| tail |--->
++------+ +-------+ +-------+ +------+
 
-   The symmetry of this arrangement eliminates lots of special
-   cases in list processing.  For example, take a look at
-   list_remove(): it takes only two pointer assignments and no
-   conditionals.  That's a lot simpler than the code would be
-   without header elements.
+이 구성의 대칭성은 리스트 처리에서 많은 특수 케이스를 제거합니다. 
+예를 들어, list_remove()를 보세요: 두 개의 포인터 할당과 조건문 없이 수행됩니다. 
+이것은 헤더 요소 없이는 코드가 훨씬 복잡해질 것입니다.
 
-   (Because only one of the pointers in each header element is used,
-   we could in fact combine them into a single header element
-   without sacrificing this simplicity.  But using two separate
-   elements allows us to do a little bit of checking on some
-   operations, which can be valuable.) */
+(각 헤더 요소에서 한 개의 포인터만 사용되므로, 
+사실 우리는 이러한 단순함을 희생하지 않고 단일 헤더 요소로 그들을 결합할 수 있습니다. 
+그러나 두 개의 별도의 요소를 사용하면, 
+일부 작업에서 약간의 확인을 할 수 있게 되어, 이것은 가치있을 수 있습니다.) */
+
 
 static bool is_sorted (struct list_elem *a, struct list_elem *b,
 		list_less_func *less, void *aux) UNUSED;
 
-/* Returns true if ELEM is a head, false otherwise. */
+/* ELEM이 헤더인 경우 true를 반환하고, 그렇지 않은 경우 false를 반환합니다. */
 static inline bool
 is_head (struct list_elem *elem) {
 	return elem != NULL && elem->prev == NULL && elem->next != NULL;
 }
 
-/* Returns true if ELEM is an interior element,
-   false otherwise. */
+/* ELEM이 내부 요소인 경우 true를 반환하고,
+그렇지 않은 경우 false를 반환합니다. */
 static inline bool
 is_interior (struct list_elem *elem) {
 	return elem != NULL && elem->prev != NULL && elem->next != NULL;
 }
 
-/* Returns true if ELEM is a tail, false otherwise. */
+/* ELEM이 꼬리인 경우 true를 반환하고, 그렇지 않은 경우 false를 반환합니다. */
 static inline bool
 is_tail (struct list_elem *elem) {
 	return elem != NULL && elem->prev != NULL && elem->next == NULL;
 }
 
-/* Initializes LIST as an empty list. */
+/* LIST를 빈 리스트로 초기화합니다. */
 void
 list_init (struct list *list) {
 	ASSERT (list != NULL);
@@ -63,7 +60,7 @@ list_init (struct list *list) {
 	list->tail.next = NULL;
 }
 
-/* Returns the beginning of LIST.  */
+/* LIST의 시작을 반환합니다. */
 struct list_elem *
 list_begin (struct list *list) {
 	ASSERT (list != NULL);
@@ -199,43 +196,41 @@ list_push_front (struct list *list, struct list_elem *elem) {
 /* Inserts ELEM at the end of LIST, so that it becomes the
    back in LIST. */
 void
-list_push_back (struct list *list, struct list_elem *elem) {
+list_push_back (struct list *list, struct list_elem *elem){
 	list_insert (list_end (list), elem);
 }
 
-/* Removes ELEM from its list and returns the element that
-   followed it.  Undefined behavior if ELEM is not in a list.
+/* "요소를 해당 리스트에서 제거하고 그 다음 요소를 반환합니다. 
+ELEM이 리스트에 포함되어 있지 않은 경우, 동작은 정의되지 않습니다.
 
-   It's not safe to treat ELEM as an element in a list after
-   removing it.  In particular, using list_next() or list_prev()
-   on ELEM after removal yields undefined behavior.  This means
-   that a naive loop to remove the elements in a list will fail:
+ELEM을 제거한 후에는 더 이상 리스트의 요소로 취급하는 것이 안전하지 않습니다. 
+특히, 제거 후에 list_next() 또는 list_prev()를 
+ELEM에 사용하면 정의되지 않는 동작이 발생합니다.
+이것은 리스트의 요소를 제거하기 위해 간단하게 반복하는 루프가 실패할 것임을 의미합니다.
 
- ** DON'T DO THIS **
- for (e = list_begin (&list); e != list_end (&list); e = list_next (e))
- {
- ...do something with e...
- list_remove (e);
- }
- ** DON'T DO THIS **
+** 이것을 하지 마세요 **
+for (e = list_begin (&list); e != list_end (&list); e = list_next (e))
+{
+...e를 가지고 어떤 일을 하세요...
+list_remove (e);
+}
+** 이것을 하지 마세요 **
 
- Here is one correct way to iterate and remove elements from a
-list:
+다음은 리스트의 요소를 반복하고 제거하는 올바른 방법입니다:
 
 for (e = list_begin (&list); e != list_end (&list); e = list_remove (e))
 {
-...do something with e...
+...e를 가지고 어떤 일을 하세요...
 }
 
-If you need to free() elements of the list then you need to be
-more conservative.  Here's an alternate strategy that works
-even in that case:
+리스트의 요소를 free() 해야 하는 경우에는 더욱 보수적이어야 합니다. 
+다음은 그런 경우에도 작동하는 대안적인 전략입니다:
 
 while (!list_empty (&list))
 {
 struct list_elem *e = list_pop_front (&list);
-...do something with e...
-}
+...e를 가지고 어떤 일을 하세요...
+}"
 */
 struct list_elem *
 list_remove (struct list_elem *elem) {
@@ -412,9 +407,9 @@ list_sort (struct list *list, list_less_func *less, void *aux) {
 	ASSERT (is_sorted (list_begin (list), list_end (list), less, aux));
 }
 
-/* Inserts ELEM in the proper position in LIST, which must be
-   sorted according to LESS given auxiliary data AUX.
-   Runs in O(n) average case in the number of elements in LIST. */
+/*ELEM을 LIST에 적절한 위치에 삽입합니다. 
+LIST는 보조 데이터 AUX를 이용한 LESS에 따라 정렬되어야 합니다.
+LIST의 요소 수에 따라 평균적으로 O(n)의 시간 복잡도를 가집니다. */
 void
 list_insert_ordered (struct list *list, struct list_elem *elem,
 		list_less_func *less, void *aux) {
