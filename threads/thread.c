@@ -170,6 +170,7 @@ void thread_wakeup(int64_t current_ticks)
 		{
 			curr_elem = list_remove(curr_elem); // sleep_list에서 제거 & curr_elem에는 다음 elem이 담김
 			thread_unblock(curr_thread);		// ready_list로 이동
+			preempt_priority();
 		}
 		else
 			break;
@@ -264,8 +265,23 @@ thread_create (const char *name, int priority,
 
 	/* Add to run queue. */
 	thread_unblock (t);
+    preempt_priority();
 
 	return tid;
+}
+
+void
+preempt_priority(void)
+{
+	struct thread *curr = thread_current();
+    if (curr == idle_thread)
+        return;
+    if (list_empty(&ready_list))
+        return;
+    struct thread *ready = list_entry(list_front(&ready_list), struct thread, elem);
+	
+    if (curr->priority < ready->priority)
+        thread_yield();
 }
 
 /* Puts the current thread to sleep.  It will not be scheduled
@@ -371,6 +387,7 @@ thread_yield (void) {
 void
 thread_set_priority (int new_priority) {
 	thread_current ()->priority = new_priority;
+	preempt_priority();
 }
 
 /* Returns the current thread's priority. */
