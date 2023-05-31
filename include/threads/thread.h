@@ -126,6 +126,9 @@ void thread_sleep (int64_t ticks);
 void thread_wakeup (int64_t global_ticks);
 bool compare_thread_ticks(const struct list_elem *a, const struct list_elem *b, void *aux);
 
+void preempt_priority(void);
+bool compare_thread_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+
 typedef void thread_func (void *aux);
 tid_t thread_create (const char *name, int priority, thread_func *, void *);
 

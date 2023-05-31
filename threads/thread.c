@@ -203,6 +203,15 @@ compare_thread_ticks(const struct list_elem *a, const struct list_elem *b, void 
 	return st_a->wakeup_ticks < st_b->wakeup_ticks;
 }
 
+/* a와 b 스레드의 priority 비교해서 a가 크면 true를 반환하는 함수 */
+bool
+compare_thread_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+	struct thread *st_a = list_entry(a, struct thread, elem);
+	struct thread *st_b = list_entry(b, struct thread, elem);
+	return st_a->priority > st_b->priority;
+}
+
 /* Prints thread statistics. */
 void
 thread_print_stats (void) {
@@ -289,7 +298,7 @@ thread_unblock (struct thread *t) {
 
 	old_level = intr_disable ();
 	ASSERT (t->status == THREAD_BLOCKED);
-	list_push_back (&ready_list, &t->elem);
+	list_insert_ordered(&ready_list, &t->elem, compare_thread_priority, NULL);
 	t->status = THREAD_READY;
 	intr_set_level (old_level);
 }
@@ -352,7 +361,8 @@ thread_yield (void) {
 
 	old_level = intr_disable ();
 	if (curr != idle_thread)
-		list_push_back (&ready_list, &curr->elem);
+		list_insert_ordered(&ready_list, &curr->elem, compare_thread_priority, NULL);
+		
 	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
 }
