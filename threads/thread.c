@@ -66,8 +66,9 @@ static void schedule (void);
 static tid_t allocate_tid (void);
 void thread_sleep(int64_t tick);
 void thread_wakeup(int64_t tick);
-bool sort_func(const struct list_elem *a, const struct list_elem *b, void *aux);
-
+void change_list(void);
+bool sort_priority(const struct list_elem *a, const struct list_elem *b, void *aux);
+bool sort_wakeup_time(const struct list_elem *a, const struct list_elem *b, void *aux);
 /* T가 유효한 스레드를 가리키는지 확인하고 true를 반환합니다. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
 
@@ -164,6 +165,9 @@ thread_print_stats (void) {
 			idle_ticks, kernel_ticks, user_ticks);
 }
 
+/*-------------------------------------------------------------------------------------------------*/
+
+
 /* NAME이라는 이름을 가진 새로운 커널 스레드를 생성하고, 초기 우선순위를 설정합니다.
    이 스레드는 FUNCTION을 실행하며, AUX를 인자로 받습니다. 이 스레드는 준비 큐에 추가됩니다.
    이 함수는 새 스레드의 스레드 식별자를 반환하거나, 생성이 실패하면 TID_ERROR를 반환합니다.
@@ -177,9 +181,7 @@ thread_print_stats (void) {
    제공된 코드는 새 스레드의 `priority' 멤버를 PRIORITY로 설정하지만, 
    실제로는 우선순위 스케줄링이 구현되어 있지 않습니다.
    우선순위 스케줄링은 Problem 1-3의 목표입니다. */
-tid_t
-thread_create (const char *name, int priority,
-		thread_func *function, void *aux) {
+tid_t thread_create (const char *name, int priority, thread_func *function, void *aux) {
 	struct thread *t;
 	tid_t tid;
 
@@ -208,6 +210,11 @@ thread_create (const char *name, int priority,
 	/* 실행 큐에 추가 */
 	thread_unblock (t);
 
+	/* 현재 실행 중인 스레드와 새로 삽입된 스레드의 우선 순위를 비교합니다. 
+	새로 들어온 스레드가 더 높은 우선 순위를 가지고 있다면, CPU를 양보합니다 */
+	 
+	change_list();
+
 	return tid;
 }
 
@@ -216,12 +223,15 @@ thread_create (const char *name, int priority,
 
    이 함수는 인터럽트가 꺼진 상태에서 호출되어야 합니다. 
    보통은 synch.h에 있는 동기화 기능을 사용하는 것이 더 나은 선택입니다. */
-void
-thread_block (void) {
-	ASSERT (!intr_context ());
-	ASSERT (intr_get_level () == INTR_OFF);
-	thread_current ()->status = THREAD_BLOCKED;
-	schedule ();
+void thread_block (void) {
+    ASSERT (!intr_context ());                   // 현재 코드가 인터럽트 핸들러 내부에서 실행되지 않음을 확인합니다.
+    ASSERT (intr_get_level () == INTR_OFF);      // 현재 인터럽트가 비활성화되어 있음을 확인합니다.
+
+    thread_current ()->status = THREAD_BLOCKED;  // 현재 스레드의 상태를 BLOCKED로 변경합니다.
+                                                 // 이로 인해 스케줄러는 이 스레드를 실행 대기열에서 제외합니다.
+
+    schedule ();                                 // 스케줄러를 호출하여 다음 실행할 스레드를 선택하고 실행합니다.
+                                                 // 이 호출로 인해 현재 스레드의 실행이 중지되고, 선택된 스레드가 실행됩니다.
 }
 
 /* 차단된 스레드 T를 실행 준비 상태로 전환합니다.
@@ -231,18 +241,24 @@ thread_block (void) {
    이 함수는 실행 중인 스레드를 선점하지 않습니다. 이는 중요한 점인데,
    만약 호출자가 스스로 인터럽트를 비활성화했다면, 
    스레드를 원자적으로 언블록하고 다른 데이터를 업데이트할 것으로 기대할 수 있습니다. */
-void
-thread_unblock (struct thread *t) {
+void thread_unblock (struct thread *t) {
+
 	enum intr_level old_level;
 
 	ASSERT (is_thread (t));
-
 	old_level = intr_disable ();
 	ASSERT (t->status == THREAD_BLOCKED);
-	list_push_back (&ready_list, &t->elem);
+	
+	// list_push_back (&ready_list, &t->elem);
+	list_insert_ordered(&ready_list, &t->elem, sort_priority, NULL);
 	t->status = THREAD_READY;
+
 	intr_set_level (old_level);
+
 }
+
+/*-------------------------------------------------------------------------------------------------*/
+
 
 /* 실행 중인 스레드의 이름을 반환합니다. */
 const char *
@@ -301,8 +317,8 @@ thread_yield (void) {
 
 	old_level = intr_disable ();
 	if (curr != idle_thread)
-		list_push_back (&ready_list, &curr->elem);
-
+		// list_push_back (&ready_list, &curr->elem);
+		list_insert_ordered (&ready_list, &curr->elem, sort_priority, NULL);
 	// curr->status = THREAD_READY;
     // schedule ();
 
@@ -311,9 +327,16 @@ thread_yield (void) {
 }
 
 /* 현재 스레드의 우선순위를 NEW_PRIORITY로 설정합니다. */
+// 현재 스레드의 우선순위를 변경한 후에는 준비 큐(ready queue)를 재정렬해야 합니다. 
+// 그 이유는 준비 큐에 있는 스레드들이 우선 순위에 따라 정렬되어야 하고, 
+// 우선 순위가 변경되면 이 정렬 순서에 영향을 미치기 때문입니다.
 void
 thread_set_priority (int new_priority) {
 	thread_current ()->priority = new_priority;
+
+	change_list();
+
+
 }
 
 /* 현재 스레드의 우선순위를 반환합니다. */
@@ -394,8 +417,7 @@ kernel_thread (thread_func *function, void *aux) {
 
 
 /* T를 NAME이라는 이름의 차단된 스레드로 기본 초기화를 수행합니다. */
-static void
-init_thread (struct thread *t, const char *name, int priority) {
+static void init_thread (struct thread *t, const char *name, int priority) {
 	ASSERT (t != NULL);
 	ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
 	ASSERT (name != NULL);
@@ -587,70 +609,136 @@ bool wake_up_time_less(const struct list_elem *a, const struct list_elem *b, voi
 
 /*-------------------------------------------------------------------------------------------------*/
 
-// Implementation for thread_sleep
+// thread_sleep 함수의 구현
 void thread_sleep(int64_t tick) {
 
-    struct thread *cur = thread_current ();
-    enum intr_level old_level;
+	struct thread *cur = thread_current (); 			// 현재 실행중인 스레드를 가져옵니다.
+	enum intr_level old_level;
 
-    old_level = intr_disable ();  // Disable interrupts.
+	old_level = intr_disable ();  						// 인터럽트를 비활성화하여 임계 영역을 보호합니다.
 
-    if (cur != idle_thread) {
-    
-	    cur->wake_up_time = tick;  // Set wake up time for current thread.
-        list_push_back (&sleep_list, &cur->elem);  // Add current thread to sleep list.
-		list_sort(&sleep_list, sort_func, 0);
+	if (cur != idle_thread) {  							// 현재 스레드가 idle 스레드가 아닌 경우에만 다음 작업을 수행합니다.
 
-        thread_block();  // Use thread_block instead of manually changing the status
-    
+		cur->wake_up_time = tick;  						// 현재 스레드의 깨어날 시간을 설정합니다.
+		// list_push_back (&sleep_list, &cur->elem);  		// 현재 스레드를 sleep_list에 추가합니다.
+		list_insert_ordered(&sleep_list, &cur->elem, sort_wakeup_time, 0);
+		
+		// list_sort(&sleep_list, sort_func, 0);  			// sleep_list를 sort_func에 따라 정렬합니다.
+
+		thread_block();  	// 현재 스레드를 BLOCKED 상태로 변경합니다. 이 상태는 다른 스레드가 실행되도록 합니다.
+
 	}
-    
-	intr_set_level (old_level);  // Restore old interrupt level.
+
+	intr_set_level(old_level); // 원래의 인터럽트 수준을 복원합니다. 이를 통해 이전에 비활성화된 인터럽트가 다시 활성화됩니다.
 
 }
 
 // Implementation for thread_wakeup
-void thread_wakeup(int64_t tick) {
+void thread_wakeup(int64_t tick){
 
-    struct list_elem *e;
-	struct list_elem *next_e;
     enum intr_level old_level;
 
+    old_level = intr_disable();  // Disable interrupts.
 
-    old_level = intr_disable ();  // Disable interrupts.
-    for (e = list_begin (&sleep_list); e != list_end (&sleep_list); e = next_e) {
-        
+	while (!list_empty(&sleep_list)){
+
+		struct list_elem *e = list_begin(&sleep_list);
 		struct thread *t = list_entry (e, struct thread, elem);
-		next_e = list_next(e);
-		// printf("%d ", t->priority);
+
+		if (tick >= t->wake_up_time){
+
+			e = list_pop_front(&sleep_list);
+			thread_unblock(t);
 		
-        if (tick >= t->wake_up_time) {  // Check if thread should be woken up.
+		}
+		else{
 
-            list_remove(e);  // Remove thread from sleep list.
-            thread_unblock(t);  // Use thread_unblock instead of manually changing the status
-			
-        }
+			break;
 
+		}
+	
 	}
 
-	// while (!list_empty (&list))
-	// {
-	// 	struct list_elem *e = list_pop_front (&list);
-	// 	...e를 가지고 어떤 일을 하세요...
-	// }
+	intr_set_level(old_level);  // Restore old interrupt level.
 
-	intr_set_level (old_level);  // Restore old interrupt level.
 }
 
 /*-------------------------------------------------------------------------------------------------*/
 
-bool sort_func(const struct list_elem *a, const struct list_elem *b, void *aux){
+bool sort_priority(const struct list_elem *a, const struct list_elem *b, void *aux){
 
-	if(list_entry (a, struct thread, elem)->wake_up_time >= list_entry (b, struct thread, elem)->wake_up_time){
+	if(list_entry (a, struct thread, elem)->priority 
+		> list_entry (b, struct thread, elem)->priority){
+
 		return true;
+
 	}
 	else{
+
 		return false;
+
+	}
+
+} 
+
+bool sort_wakeup_time(const struct list_elem *a, const struct list_elem *b, void *aux){
+
+	if(list_entry (a, struct thread, elem)->wake_up_time 
+		< list_entry (b, struct thread, elem)->wake_up_time){
+
+		return true;
+
+	}
+	else{
+
+		return false;
+
 	}
 
 }
+
+/*-------------------------------------------------------------------------------------------------*/
+
+
+void change_list(void){
+
+	struct thread *cur = thread_current();
+
+	if(!list_empty(&ready_list)){
+
+		if(cur->priority < list_entry(list_front(&ready_list), struct thread, elem)->priority) {
+        	
+			thread_yield();
+
+		}
+		
+    }
+
+}
+
+// // Implementation for thread_wakeup
+// void thread_wakeup(int64_t tick) {
+
+//     struct list_elem *e;
+// 	  struct list_elem *next_e;
+//     enum intr_level old_level;
+
+
+//     old_level = intr_disable ();  // Disable interrupts.
+//     for (e = list_begin (&sleep_list); e != list_end (&sleep_list); e = next_e) {
+        
+// 			struct thread *t = list_entry (e, struct thread, elem);
+// 			next_e = list_next(e);
+// 			// printf("%d ", t->priority);
+			
+// 	    if (tick >= t->wake_up_time) {  // Check if thread should be woken up.
+	
+// 	        list_remove(e);  // Remove thread from sleep list.
+// 	        thread_unblock(t);  // Use thread_unblock instead of manually changing the status
+				
+// 	    }
+
+// 	}
+
+// 	intr_set_level (old_level);  // Restore old interrupt level.
+// }

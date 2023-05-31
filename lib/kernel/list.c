@@ -67,56 +67,53 @@ list_begin (struct list *list) {
 	return list->head.next;
 }
 
-/* Returns the element after ELEM in its list.  If ELEM is the
-   last element in its list, returns the list tail.  Results are
-   undefined if ELEM is itself a list tail. */
+/* ELEM이 속한 리스트에서 ELEM 다음의 요소를 반환합니다.
+ELEM이 리스트의 마지막 요소인 경우, 리스트의 꼬리를 반환합니다.
+ELEM 자체가 리스트의 꼬리인 경우 결과는 정의되지 않습니다. */
 struct list_elem *
 list_next (struct list_elem *elem) {
 	ASSERT (is_head (elem) || is_interior (elem));
 	return elem->next;
 }
 
-/* Returns LIST's tail.
+/* LIST의 꼬리를 반환합니다.
 
-   list_end() is often used in iterating through a list from
-   front to back.  See the big comment at the top of list.h for
-   an example. */
+list_end()는 주로 앞에서 뒤로 리스트를 순회하는 데 사용됩니다.
+list.h 상단의 큰 주석에서 예를 확인하세요. */
 struct list_elem *
 list_end (struct list *list) {
 	ASSERT (list != NULL);
 	return &list->tail;
 }
 
-/* Returns the LIST's reverse beginning, for iterating through
-   LIST in reverse order, from back to front. */
+/* LIST의 역순 시작을 반환합니다. 이는
+LIST를 역순으로, 뒤에서 앞으로 순회하기 위한 것입니다. */
 struct list_elem *
 list_rbegin (struct list *list) {
 	ASSERT (list != NULL);
 	return list->tail.prev;
 }
 
-/* Returns the element before ELEM in its list.  If ELEM is the
-   first element in its list, returns the list head.  Results are
-   undefined if ELEM is itself a list head. */
+/* ELEM이 속한 리스트에서 ELEM 이전의 요소를 반환합니다.
+ELEM이 리스트의 첫 번째 요소인 경우, 리스트의 머리를 반환합니다.
+ELEM 자체가 리스트의 머리인 경우 결과는 정의되지 않습니다. */
 struct list_elem *
 list_prev (struct list_elem *elem) {
 	ASSERT (is_interior (elem) || is_tail (elem));
 	return elem->prev;
 }
 
-/* Returns LIST's head.
+/* LIST의 머리를 반환합니다.
 
-   list_rend() is often used in iterating through a list in
-   reverse order, from back to front.  Here's typical usage,
-   following the example from the top of list.h:
+list_rend()는 주로 리스트를 역순으로, 뒤에서 앞으로 순회하는 데 사용됩니다.
+여기에는 일반적인 사용법이 있으며, list.h 상단의 예를 따릅니다:
 
-   for (e = list_rbegin (&foo_list); e != list_rend (&foo_list);
-   e = list_prev (e))
-   {
-   struct foo *f = list_entry (e, struct foo, elem);
-   ...do something with f...
-   }
-   */
+for (e = list_rbegin (&foo_list); e != list_rend (&foo_list);
+e = list_prev (e))
+{
+struct foo *f = list_entry (e, struct foo, elem);
+...f를 가지고 어떤 일을 하세요...
+} */
 struct list_elem *
 list_rend (struct list *list) {
 	ASSERT (list != NULL);

@@ -92,6 +92,7 @@ struct thread {
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
 
+	struct lock *wait_on_lock;			/* The lock that this thread is waiting to acquire. */
 	int64_t wake_up_time;
 
 	/* Shared between thread.c and synch.c. */
@@ -151,6 +152,6 @@ void do_iret (struct intr_frame *tf);
 void thread_sleep(int64_t tick);
 void thread_wakeup(int64_t current_ticks);
 
-bool sort_func(const struct list_elem *a, const struct list_elem *b, void *aux);
-
+bool sort_priority(const struct list_elem *a, const struct list_elem *b, void *aux);
+bool sort_wakeup_time(const struct list_elem *a, const struct list_elem *b, void *aux);
 #endif /* threads/thread.h */

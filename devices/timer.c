@@ -90,32 +90,27 @@ timer_elapsed (int64_t then) {
 
 /*-------------------------------------------------------------------------------------------------*/
 
+/* 대략적으로 타이머 틱을 대기합니다. */
+void timer_sleep (int64_t ticks) {
+    ASSERT (intr_get_level () == INTR_ON);  		// 인터럽트가 활성화되어 있는지 확인합니다.
 
-// pintos/src/devices/timer.c
+    int64_t wake_up_time = timer_ticks() + ticks;  	// 깨어날 시간을 계산합니다.
 
-/* Approximately waits for the timer ticks. */
-void
-timer_sleep (int64_t ticks) {
-    ASSERT (intr_get_level () == INTR_ON);  // Checks if interrupts are enabled.
-
-    int64_t wake_up_time = timer_ticks() + ticks;  // Calculate the wake up time.
-
-    thread_sleep(wake_up_time);  // Sleep the current thread.
+    thread_sleep(wake_up_time);  					// 현재 쓰레드를 잠재웁니다.
 }
 
-/* Timer interrupt handler. */
-static void
-timer_interrupt (struct intr_frame *args UNUSED) {
-    ticks++;
-    thread_tick ();
+/* 타이머 인터럽트 핸들러. */
+static void timer_interrupt (struct intr_frame *args UNUSED) {
+    ticks++; 				// 시스템 전체의 타이머 틱 수를 증가시킵니다.
+    thread_tick (); 		// 현재 스레드에 대한 타이머 틱 처리를 수행합니다. 
 
-    // Wake up sleeping threads if their wake up time has passed.
+    // 깨어날 시간이 지난 쓰레드를 깨웁니다. 즉, 각 스레드의 wake_up_time을 확인하여
+	// 현재 시간(ticks)이 그 시간 이후라면 해당 스레드를 깨우는 처리를 수행합니다.
     thread_wakeup(ticks);
+	
 }
 
 /*-------------------------------------------------------------------------------------------------*/
-
-
 
 /* 대략적으로 MS 밀리초 동안 실행을 중단합니다. */
 void
