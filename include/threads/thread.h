@@ -95,6 +95,13 @@ struct thread {
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
+	int64_t wakeup_tick; /*check*/
+	int init_priority; /*check*/
+	struct list donations; /*check*/
+	struct list_elem donation_elem; /*check*/
+	struct lock *wait_on_lock; /*check*/
+
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
@@ -142,5 +149,18 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
+
+void thread_sleep(int64_t ticks); /*check*/
+void thread_awake(int64_t ticks); /*check*/
+int64_t get_next_tick_to_awake(void); /*check*/
+void update_next_tick_to_awake(int64_t ticks); /*check*/
+void preemption_priority(void); /*check*/
+void refresh_priority(void); /*check*/
+bool thread_compare_priority(struct list_elem *higher, struct list_elem *lower, void *aux UNUSED); /*check*/
+bool thread_compare_donate_priority(const struct list_elem *higher, const struct list_elem *lower, void *aux UNUSED); /*check*/
+void donate_priority(void); /*check*/
+bool sema_compare_priority(const struct list_elem *higher, const struct list_elem *lower, void *aux UNUSED); /*check*/
+void remove_with_lock(struct lock *lock); /*check*/
+
 
 #endif /* threads/thread.h */
