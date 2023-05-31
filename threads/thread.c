@@ -27,7 +27,6 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
-/* timer_sleep() 호출될 경우 기존 running 되는 프로세스/스레드 -> sleep_list   */
 static struct list sleep_list;
 
 /* Idle thread. */
@@ -159,43 +158,41 @@ thread_tick (void) {
 
 void thread_wakeup(int64_t current_ticks)
 {
-	enum intr_level old_level = intr_disable(); // 인터럽트 비활성화
+	enum intr_level old_level = intr_disable();
 
-	struct list_elem *curr_elem = list_begin(&sleep_list); // sleep_list의 첫번째 요소(빈 경우 NULL)
+	struct list_elem *curr_elem = list_begin(&sleep_list);
 	while (curr_elem != list_end(&sleep_list))
 	{
-		struct thread *curr_thread = list_entry(curr_elem, struct thread, elem); // 현재 검사중인 elem의 스레드
+		struct thread *curr_thread = list_entry(curr_elem, struct thread, elem);
 
-		if (current_ticks >= curr_thread->wakeup_ticks) // 깰 시간이 됐으면
+		if (current_ticks >= curr_thread->wakeup_ticks)
 		{
-			curr_elem = list_remove(curr_elem); // sleep_list에서 제거 & curr_elem에는 다음 elem이 담김
-			thread_unblock(curr_thread);		// ready_list로 이동
+			curr_elem = list_remove(curr_elem);
+			thread_unblock(curr_thread);
 			preempt_priority();
 		}
 		else
 			break;
 	}
-	intr_set_level(old_level); // 인터럽트 상태를 원래 상태로 변경
+	intr_set_level(old_level);
 }
 
 void
 thread_sleep (int64_t ticks) {
-	struct thread *curr = thread_current();	 // 현재 스레드;
+	struct thread *curr = thread_current();
 	enum intr_level old_level;
 
-	ASSERT(curr != idle_thread); // 현재 스레드가 idle이 아닐 때만
+	ASSERT(curr != idle_thread);
 
-	old_level = intr_disable(); // 인터럽트 비활성
-	curr->wakeup_ticks = ticks;	 // 일어날 시각 저장
+	old_level = intr_disable();
+	curr->wakeup_ticks = ticks;
 
-	// sleep_list에 있는 원소들과 wakeup_ticks를 비교하면서 삽입될 위치 찾아서 삽입하기
 	list_insert_ordered(&sleep_list, &curr->elem, compare_thread_ticks, NULL);
-	thread_block(); // 현재 스레드 재우기
+	thread_block();
 
-	intr_set_level(old_level); // 인터럽트 상태를 원래 상태로 변경
+	intr_set_level(old_level);
 }
 
-/* a와 b 스레드의 wakeup_ticks를 비교해서 작으면 true를 반환하는 함수 */
 bool
 compare_thread_ticks(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
 {
@@ -204,7 +201,6 @@ compare_thread_ticks(const struct list_elem *a, const struct list_elem *b, void 
 	return st_a->wakeup_ticks < st_b->wakeup_ticks;
 }
 
-/* a와 b 스레드의 priority 비교해서 a가 크면 true를 반환하는 함수 */
 bool
 compare_thread_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
 {
@@ -484,7 +480,10 @@ init_thread (struct thread *t, const char *name, int priority) {
 	strlcpy (t->name, name, sizeof t->name);
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
+	t->origin_priority = priority;
+	t->wait_on_lock = NULL;
 	t->magic = THREAD_MAGIC;
+	list_init(&t->donations);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
