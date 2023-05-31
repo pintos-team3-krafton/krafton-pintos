@@ -14,6 +14,7 @@ down 또는 "P": 값이 양수가 될 때까지 기다린 후,
 
 up 또는 "V": 값을 증가시키고 (대기 중인 스레드가 있다면
 하나를 깨웁니다). */
+
 void
 sema_init (struct semaphore *sema, unsigned value) {
 	ASSERT (sema != NULL);
@@ -85,10 +86,12 @@ sema_up (struct semaphore *sema) {
 
 	old_level = intr_disable ();
 
-	list_sort(&sema->waiters, sort_priority, 0);
-	if (!list_empty (&sema->waiters))
-		thread_unblock (list_entry (list_pop_front (&sema->waiters),
-					struct thread, elem));
+	if (!list_empty (&sema->waiters)) {
+
+		list_sort(&sema->waiters, sort_priority, 0);
+		thread_unblock (list_entry (list_pop_front (&sema->waiters), struct thread, elem));
+		
+	}
 	sema->value++;
 
 	change_list();
@@ -152,49 +155,29 @@ lock_init (struct lock *lock) {
 
 /*-------------------------------------------------------------------------------------------------*/
 
-#define MAX_DEPTH 8
-
-void donate_priority(void) {
-	int depth = 0;
-	struct thread *t = thread_current();
-	struct lock *l = t->wait_on_lock;
-
-	while (l && depth < MAX_DEPTH) {
-		depth++;
-		if (!l->holder) break;
-		
-		// 락 소유자의 우선순위를 업데이트
-		if (l->holder->priority < t->priority) {
-			l->holder->priority = t->priority;
-		}
-		l = l->holder->wait_on_lock;
-	}
-}
-
 /* 필요한 경우 잠자기까지 LOCK을 획득합니다.
 이 잠금은 현재 스레드에 의해 이미 보유되어서는 안 됩니다.
 
 이 함수는 잠들 수 있으므로 인터럽트 핸들러 내에서 호출되어서는 안 됩니다.
 이 함수는 인터럽트가 비활성화된 상태에서 호출될 수 있지만,
 잠들어야 하는 경우 인터럽트는 다시 켜질 것입니다. */
-void lock_acquire (struct lock *lock) {
-	
-	struct thread * cur = thread_current();
+void lock_acquire(struct lock *lock) {
+	struct thread *cur = thread_current();
 
-	ASSERT (lock != NULL);
-	ASSERT (!intr_context ());
-	ASSERT (!lock_held_by_current_thread (lock));
+	ASSERT(lock != NULL);
+	ASSERT(!intr_context());
+	ASSERT(!lock_held_by_current_thread(lock));
 
-	cur->wait_on_lock = lock;
-
-	if(lock->holder != NULL){
-
-		donate_priority();
+	if (lock->holder != NULL) {
+		cur->wait_on_lock = lock;
+		thread_donate(lock->holder);
+		
 	}
 
-	sema_down (&lock->semaphore);
-	lock->holder = cur;
+	sema_down(&lock->semaphore);
+	
 	cur->wait_on_lock = NULL;
+	lock->holder = cur;
 }
 
 /* LOCK을 획득하려고 시도하고 성공한 경우 true를 반환하거나
@@ -213,29 +196,42 @@ bool lock_try_acquire (struct lock *lock) {
 	return success;
 }
 
-void lock_release (struct lock *lock) {
-	ASSERT (lock != NULL);
-	ASSERT (lock_held_by_current_thread (lock));
+// void lock_release (struct lock *lock) {
+// 	ASSERT (lock != NULL);
+// 	ASSERT (lock_held_by_current_thread (lock));
 
-	struct list_elem *e;
-	struct thread *cur = thread_current();
+// 	struct list_elem *e;
+// 	struct thread *cur = thread_current();
 
-	for (e = list_begin (&cur->donations); e != list_end (&cur->donations); e = list_next (e)) {
-		struct thread *f = list_entry (e, struct thread, donation_elem);
-		if (f->wait_on_lock == lock) {
-			list_remove(e);
-		}
-	}
+// 	for (e = list_begin (&cur->donations); e != list_end (&cur->donations); e = list_next (e)) {
+// 		struct thread *f = list_entry (e, struct thread, donation_elem);
+// 		if (f->wait_on_lock == lock) {
+// 			list_remove(e);
+// 		}
+// 	}
 
-	if(!list_empty(&cur->donations)) {
-		list_sort(&cur->donations, sort_donate_priority, NULL);
-		cur->priority = list_entry(list_front(&cur->donations), struct thread, donation_elem)->priority;
-	} else {
-		cur->priority = cur->initial_priority;
+// 	if(!list_empty(&cur->donations)) {
+// 		list_sort(&cur->donations, sort_donate_priority, NULL);
+// 		cur->priority = list_entry(list_front(&cur->donations), struct thread, donation_elem)->priority;
+// 	} else {
+// 		cur->priority = cur->initial_priority;
+// 	}
+
+// 	lock->holder = NULL;
+// 	sema_up (&lock->semaphore);
+// }
+
+void lock_release(struct lock *lock) {
+	ASSERT(lock != NULL);
+	ASSERT(lock_held_by_current_thread(lock));
+
+	if(!list_empty (&lock->semaphore.waiters)){
+		thread_remove_donate(lock);
+		thread_donate_reset(lock->holder);
 	}
 
 	lock->holder = NULL;
-	sema_up (&lock->semaphore);
+	sema_up(&lock->semaphore);
 }
 
 /*-------------------------------------------------------------------------------------------------*/
@@ -296,7 +292,7 @@ void cond_wait (struct condition *cond, struct lock *lock) {
 
 	sema_init (&waiter.semaphore, 0);
 	// list_push_back (&cond->waiters, &waiter.elem);
-	list_insert_ordered (&cond->waiters, &waiter.elem, sort_donate_priority, 0);
+	list_insert_ordered (&cond->waiters, &waiter.elem, sort_condvar_priority, 0);
 	lock_release (lock);
 	sema_down (&waiter.semaphore);
 	lock_acquire (lock);
@@ -317,7 +313,7 @@ void cond_signal (struct condition *cond, struct lock *lock UNUSED) {
 
 	if (!list_empty (&cond->waiters)){
 
-		list_sort(&cond->waiters, sort_donate_priority, 0);
+		list_sort(&cond->waiters, sort_condvar_priority, 0);
 		sema_up (&list_entry (list_pop_front (&cond->waiters), struct semaphore_elem, elem)->semaphore);
 		
 	}
@@ -338,3 +334,50 @@ cond_broadcast (struct condition *cond, struct lock *lock) {
 	while (!list_empty (&cond->waiters))
 		cond_signal (cond, lock);
 }
+
+bool sort_condvar_priority(const struct list_elem *a, const struct list_elem *b, void *aux){
+
+	// if(list_entry (a, struct thread, elem)->priority 
+	// 	> list_entry (b, struct thread, elem)->priority){
+
+	// 	return true;
+
+	// }
+	// else{
+
+	// 	return false;
+
+	// }
+
+	struct semaphore_elem *sem_a = list_entry(a, struct semaphore_elem, elem);
+    struct semaphore_elem *sem_b = list_entry(b, struct semaphore_elem, elem);
+    
+    struct thread *thread_a = NULL;
+    if (!list_empty(&sem_a->semaphore.waiters))
+    {
+        thread_a = list_entry(list_front(&sem_a->semaphore.waiters), struct thread, elem);
+    }
+    
+    struct thread *thread_b = NULL;
+    if (!list_empty(&sem_b->semaphore.waiters))
+    {
+        thread_b = list_entry(list_front(&sem_b->semaphore.waiters), struct thread, elem);
+    }
+    // 두 리스트가 모두 비어있는 경우에도 처리를 추가
+    if (thread_a == NULL && thread_b == NULL)
+    {
+        return false; 
+    }
+    // a 리스트가 비어있는 경우 처리를 추가
+    if (thread_a == NULL)
+    {
+        return false; 
+    }
+    // b 리스트가 비어있는 경우 처리를 추가
+    if (thread_b == NULL)
+    {
+        return true; 
+    }
+    return thread_a->priority > thread_b->priority;
+
+} 

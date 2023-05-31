@@ -160,4 +160,10 @@ void thread_wakeup(int64_t current_ticks);
 bool sort_priority(const struct list_elem *a, const struct list_elem *b, void *aux);
 bool sort_donate_priority(const struct list_elem *a, const struct list_elem *b, void *aux);
 bool sort_wakeup_time(const struct list_elem *a, const struct list_elem *b, void *aux);
+void thread_donate(struct thread * t);
+void thread_donate_depth(void);
+void thread_remove_donate(struct lock *release_locker);
+void thread_donate_reset(struct thread *t);
+
+
 #endif /* threads/thread.h */
