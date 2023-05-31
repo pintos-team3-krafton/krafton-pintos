@@ -68,6 +68,7 @@ void thread_sleep(int64_t tick);
 void thread_wakeup(int64_t tick);
 void change_list(void);
 bool sort_priority(const struct list_elem *a, const struct list_elem *b, void *aux);
+bool sort_donate_priority(const struct list_elem *a, const struct list_elem *b, void *aux);
 bool sort_wakeup_time(const struct list_elem *a, const struct list_elem *b, void *aux);
 /* T가 유효한 스레드를 가리키는지 확인하고 true를 반환합니다. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -330,14 +331,31 @@ thread_yield (void) {
 // 현재 스레드의 우선순위를 변경한 후에는 준비 큐(ready queue)를 재정렬해야 합니다. 
 // 그 이유는 준비 큐에 있는 스레드들이 우선 순위에 따라 정렬되어야 하고, 
 // 우선 순위가 변경되면 이 정렬 순서에 영향을 미치기 때문입니다.
-void
-thread_set_priority (int new_priority) {
-	thread_current ()->priority = new_priority;
+void thread_set_priority (int new_priority) {
+	struct thread *cur = thread_current();
+
+	cur->priority = new_priority;
+
+	if (!cur->wait_on_lock) {
+		cur->initial_priority = new_priority;
+	} else {
+		if (new_priority > cur->priority) {
+			cur->priority = new_priority;
+			cur->initial_priority = new_priority;
+		}
+	}
 
 	change_list();
-
-
 }
+
+// void
+// thread_set_priority (int new_priority) {
+// 	thread_current ()->priority = new_priority;
+
+// 	change_list();
+
+
+// }
 
 /* 현재 스레드의 우선순위를 반환합니다. */
 int
@@ -418,6 +436,7 @@ kernel_thread (thread_func *function, void *aux) {
 
 /* T를 NAME이라는 이름의 차단된 스레드로 기본 초기화를 수행합니다. */
 static void init_thread (struct thread *t, const char *name, int priority) {
+
 	ASSERT (t != NULL);
 	ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
 	ASSERT (name != NULL);
@@ -428,7 +447,26 @@ static void init_thread (struct thread *t, const char *name, int priority) {
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
+
+	/* donation */
+	t->initial_priority = priority;
+	list_init(&t->donations);
+	t->wait_on_lock = NULL;
+
 }
+
+// static void init_thread (struct thread *t, const char *name, int priority) {
+// 	ASSERT (t != NULL);
+// 	ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
+// 	ASSERT (name != NULL);
+
+// 	memset (t, 0, sizeof *t);
+// 	t->status = THREAD_BLOCKED;
+// 	strlcpy (t->name, name, sizeof t->name);
+// 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
+// 	t->priority = priority;
+// 	t->magic = THREAD_MAGIC;
+// }
 
 /* 스케줄링할 다음 스레드를 선택하고 반환합니다. 
    실행 대기열이 비어 있지 않으면 실행 대기열에서 스레드를 반환해야 합니다. 
@@ -680,6 +718,23 @@ bool sort_priority(const struct list_elem *a, const struct list_elem *b, void *a
 	}
 
 } 
+
+bool sort_donate_priority(const struct list_elem *a, const struct list_elem *b, void *aux){
+
+	if(list_entry (a, struct thread, donation_elem)->priority 
+		> list_entry (b, struct thread, donation_elem)->priority){
+
+		return true;
+
+	}
+	else{
+
+		return false;
+
+	}
+
+} 
+
 
 bool sort_wakeup_time(const struct list_elem *a, const struct list_elem *b, void *aux){
 
