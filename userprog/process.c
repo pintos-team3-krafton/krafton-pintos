@@ -49,6 +49,9 @@ process_create_initd (const char *file_name) {
 	if (fn_copy == NULL)
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);
+	
+ 	char *save_ptr;
+    strtok_r(file_name, " ", &save_ptr);
 
 	/* Create a new thread to execute FILE_NAME. */
 	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
@@ -176,8 +179,20 @@ process_exec (void *f_name) {
 	/* We first kill the current context */
 	process_cleanup ();
 
+ 	char *parse[128];
+    char *token, *save_ptr;
+    int argc = 0;
+    for (token = strtok_r(file_name, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr))
+		parse[argc++] = token;
+
 	/* And then load the binary */
 	success = load (file_name, &_if);
+
+	argument_stack(parse, argc, &_if.rsp);
+    _if.R.rdi = argc;
+    _if.R.rsi = (char *)_if.rsp + 8;
+
+    hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
 
 	/* If load failed, quit. */
 	palloc_free_page (file_name);
@@ -189,6 +204,34 @@ process_exec (void *f_name) {
 	NOT_REACHED ();
 }
 
+void argument_stack(char **parse, int argc, void **rsp)
+{
+    for (int i = argc - 1; i >= 0; i--) {
+		int argv_len = strlen(parse[i]);
+        for (int j = argv_len; j >= 0; j--) {
+            (*rsp)--;
+            **(char **)rsp = parse[i][j];
+        }
+        parse[i] = *(char **)rsp;
+    }
+
+    int padding = (int)*rsp % 8;
+    for (int i = 0; i < padding; i++) {
+        (*rsp)--;
+        **(uint8_t **)rsp = 0;
+    }
+
+    (*rsp) -= 8;
+    **(char ***)rsp = 0;
+
+    for (int i = argc - 1; i > -1; i--) {
+        (*rsp) -= 8;
+        **(char ***)rsp = parse[i];
+    }
+
+    (*rsp) -= 8;
+    **(void ***)rsp = 0;
+}
 
 /* Waits for thread TID to die and returns its exit status.  If
  * it was terminated by the kernel (i.e. killed due to an
@@ -204,6 +247,8 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
+	for (int i = 0; i < 100000000; i++);
+
 	return -1;
 }
 
