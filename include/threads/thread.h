@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "include/threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -92,15 +93,32 @@ struct thread {
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
 
-	int origin_priority;
-    struct lock *wait_on_lock;
-    struct list donations;
-    struct list_elem donation_elem;
-
-	int64_t wakeup_ticks;	   			/* tick till wake up */
-
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
+
+	int64_t wakeup_tick;
+
+	int init_priority;
+	struct lock *wait_on_lock;
+	struct list donations;
+	struct list_elem donation_elem;
+
+	int nice;
+	int recent_cpu;
+	struct list_elem all_elem;
+
+	struct thread *parent_t;
+	struct list children_list;
+	struct list_elem child_elem;
+
+	struct semaphore sema_exit;
+	struct semaphore sema_wait;
+	struct semaphore sema_fork; 
+	int exit_status;
+
+	struct file **fdt;
+	int next_fd;
+	struct file *running_file;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -113,6 +131,7 @@ struct thread {
 
 	/* Owned by thread.c. */
 	struct intr_frame tf;               /* Information for switching */
+	struct intr_frame ptf;
 	unsigned magic;                     /* Detects stack overflow. */
 };
 
@@ -126,21 +145,6 @@ void thread_start (void);
 
 void thread_tick (void);
 void thread_print_stats (void);
-
-void thread_sleep (int64_t ticks);
-void thread_wakeup (int64_t global_ticks);
-bool compare_thread_ticks(const struct list_elem *a, const struct list_elem *b, void *aux);
-
-void preempt_priority(void);
-bool compare_thread_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
-bool compare_sema_priority(const struct list_elem *a, const struct list_elem *b, void *aux);
-
-void donate_priority(void);
-bool compare_donation_priority(const struct list_elem *a, const struct list_elem *b, void *aux);
-
-void remove_with_lock(struct lock *lock);
-void refresh_priority(void);
-
 
 typedef void thread_func (void *aux);
 tid_t thread_create (const char *name, int priority, thread_func *, void *);
@@ -164,5 +168,24 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
+
+int64_t get_tick_awake (void);
+void next_tick_awake (int64_t ticks);
+void thread_sleep (int64_t ticks);
+void thread_awake (int64_t ticks);
+
+void preemption_priority (void);
+bool compare_priority (struct list_elem *higher, struct list_elem *lower, void *aux UNUSED);
+bool compare_donation_priority (const struct list_elem *higher, const struct list_elem *lower, void *aux UNUSED);
+void donate_priority (void);
+void refresh_priority (void);
+void remove_with_lock (struct lock *lock);
+
+void mlfqs_priority (struct thread *t);
+void mlfqs_recent_cpu (struct thread *t);
+void mlfqs_load_avg (void);
+void mlfqs_increment (void);
+void mlfqs_recalc_priority (void);
+void mlfqs_recalc_recent_cpu (void);
 
 #endif /* threads/thread.h */
