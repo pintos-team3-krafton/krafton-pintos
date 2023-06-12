@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "threads/flags.h"
+#include "threads/malloc.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
 #include "threads/palloc.h"
@@ -206,6 +207,21 @@ tid_t thread_create (const char *name, int priority, thread_func *function, void
 	t->tf.ss = SEL_KDSEG;
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
+
+	t->parent_t = thread_current ();
+	sema_init (&t->sema_exit, 0);
+	sema_init (&t->sema_fork, 0);
+	sema_init (&t->sema_wait, 0);
+
+	list_push_back (&thread_current ()->children_list, &t->child_elem);
+
+	t->fdt = palloc_get_page (PAL_ZERO);
+	if (t->fdt == NULL)
+		return TID_ERROR;
+
+	t->fdt[0] = 1;
+	t->fdt[1] = 2;
+	t->next_fd = 2;
 
 	/* 실행 큐에 추가 */
 	thread_unblock (t);
@@ -448,6 +464,7 @@ static void init_thread (struct thread *t, const char *name, int priority) {
 	t->wait_on_lock = NULL;
 
 	t->magic = THREAD_MAGIC;
+	list_init (&t->children_list);
 
 }
 

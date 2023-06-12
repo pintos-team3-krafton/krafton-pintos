@@ -398,7 +398,7 @@ intr_dump_frame (const struct intr_frame *f) {
 			f->es, f->ds, f->cs, f->ss);
 }
 
-/* Returns the name of interrupt VEC. */
+/* Returns the name of interrupt VEC. */ 
 const char *
 intr_name (uint8_t vec) {
 	return intr_names[vec];
