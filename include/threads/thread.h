@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "include/threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -92,8 +93,30 @@ struct thread {
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
 
+	/* donation */
+	struct lock *wait_on_lock; /* 스레드가 기다리고 있는 락. */
+	int initial_priority;     /* 기부받기 전 원래의 스레드 우선 순위. */
+	struct list donations;     /* 이 스레드에게 우선 순위를 기부한 스레드들의 리스트. */
+	struct list_elem donation_elem;
+
+	int64_t wake_up_time;
+
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
+
+	struct thread *parent_t;
+	struct list children_list;
+	struct list_elem child_elem;
+
+	struct semaphore sema_exit;
+	struct semaphore sema_fork;
+	struct semaphore sema_wait;
+
+	struct file **fdt;
+	int next_fd;
+
+	struct file *running_file;
+	int exit_status;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -106,7 +129,11 @@ struct thread {
 
 	/* Owned by thread.c. */
 	struct intr_frame tf;               /* Information for switching */
+	struct intr_frame ptf;
 	unsigned magic;                     /* Detects stack overflow. */
+
+
+	/* tick till wake up */
 };
 
 /* If false (default), use round-robin scheduler.
@@ -142,5 +169,16 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
+
+void thread_sleep(int64_t tick);
+void thread_wakeup(int64_t current_ticks);
+
+bool sort_priority(const struct list_elem *a, const struct list_elem *b, void *aux);
+bool sort_donate_priority(const struct list_elem *a, const struct list_elem *b, void *aux);
+bool sort_wakeup_time(const struct list_elem *a, const struct list_elem *b, void *aux);
+void thread_donate(struct thread * t);
+void thread_donate_depth(void);
+void thread_remove_donate(struct lock *release_locker);
+void thread_donate_reset(struct thread *t);
 
 #endif /* threads/thread.h */
